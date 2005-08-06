@@ -1,9 +1,6 @@
 
 from collections import deque
 
-#
-# A very simple cooperative threads package using generators,
-#
 
 def _singleton(cls):
     instance = []
@@ -12,6 +9,10 @@ def _singleton(cls):
             instance.append(cls(*args, **kargs))
         return instance[0]
     return wrapper
+
+#
+# Different kinds of objects providing a simple synchronization scheme
+#
 
 class WaitObject(object):
     def __init__(self):
@@ -32,7 +33,16 @@ class WaitObject(object):
     def set_ready(self, ready):
         self.switcher.set_ready(self, ready)
 
+class _Ready(WaitObject):
+    def __init__(self):
+        WaitObject.__init__(self)
+        self.set_ready(True)
+
 class Queue(WaitObject):
+    """
+    A general message queue to communicate between threads.
+    Can contain any kind of objects.
+    """
     def __init__(self):
         WaitObject.__init__(self)
         self.data = []
@@ -47,22 +57,22 @@ class Queue(WaitObject):
             self.set_ready(False)
         return self.data.pop(0)
 
-class _Ready(WaitObject):
-    def __init__(self):
-        WaitObject.__init__(self)
-        self.set_ready(True)
-
 # Special-casing Ready as a singleton is important for scalability
 Ready = _singleton(_Ready)
 
 
 class Softlet(object):
     def __init__(self, func=None, switcher=None):
-        self.switcher = switcher or current_switcher()
-        self.runner = func or self.run()
-        self.switcher.add_thread(self)
+        self.finished = False
+        self._switcher = switcher or current_switcher()
+        self._runner = func or self.run()
+        self._switcher.add_thread(self)
+
 
 class Switcher(object):
+    """
+    The main switching loop. Handles WaitObjects and Threads.
+    """
     def __init__(self):
         self.threads = set()
         self.ready_objects = set()
@@ -71,6 +81,7 @@ class Switcher(object):
     def add_thread(self, thread):
         Ready().add_waiter(thread)
         self.threads.add(thread)
+        thread.finished = False
 
     def set_ready(self, wait_object, ready):
         if ready:
@@ -82,17 +93,21 @@ class Switcher(object):
         while self.threads:
             for r in self.ready_objects:
                 thread = r.get_waiter()
-                if thread is None or thread.runner is None:
+                if thread is None or thread.finished:
                     continue
                 try:
                     self.nb_switches += 1
-                    wait_object = thread.runner.next()
+                    wait_object = thread._runner.next()
                 except StopIteration:
-                    thread.runner = None
+                    thread.finished = True
                     self.threads.remove(thread)
                 else:
                     wait_object.add_waiter(thread)
                 break
+
+#
+# Functions
+#
 
 current_switcher = _singleton(Switcher)
 

@@ -6,6 +6,9 @@ try:
 except ImportError:
     import _autopath, softlets
 
+# import psyco
+# psyco.full()
+
 def looping_thread(count):
     cond = softlets.Ready()
     for i in xrange(count):
