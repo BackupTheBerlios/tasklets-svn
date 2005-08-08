@@ -1,5 +1,6 @@
 
 from collections import deque
+import threading
 
 def _singleton(cls):
     instance = []
@@ -8,6 +9,19 @@ def _singleton(cls):
             instance.append(cls(*args, **kargs))
         return instance[0]
     return wrapper
+
+_lock = threading.Lock()
+
+def _protected(func, lock=_lock):
+    def f(*args, **kargs):
+        lock.acquire()
+        func(*args, **kargs)
+        lock.release()
+    return f
+
+def _unprotected(func):
+    return func
+
 
 #
 # Different kinds of objects providing a simple synchronization scheme
@@ -165,10 +179,15 @@ class LogicalOr(WaitObject):
 # Main loop
 #
 
+# Wicked idea: rewrite the switcher as a generator that yields
+# the next thread to be scheduled.
+# Then, write a metaswitcher that will iterate through the switcher.
+
 class Switcher(object):
     """
     The main switching loop. Handles WaitObjects and Threads.
     """
+
     def __init__(self):
         self.threads = set()
         self.ready_objects = set()
@@ -196,6 +215,7 @@ class Switcher(object):
         self.ready_objects.remove(wait_object)
 
     def run(self):
+#         _lock.acquire()
         while self.threads:
             if not self.ready_objects:
                 raise Exception("softlets starved")
@@ -206,14 +226,21 @@ class Switcher(object):
                 self.nb_switches += 1
                 try:
                     self.current_thread = thread
+#                     _lock.release()
                     wait_object = thread.runner.next()
                 except StopIteration:
+#                     _lock.acquire()
                     self.current_thread = None
                     thread.terminate()
+                except:
+#                     _lock.acquire()
+                    raise
                 else:
+#                     _lock.acquire()
                     self.current_thread = None
                     wait_object.add_waiter(thread)
                 break
+#         _lock.release()
 
 #
 # Functions
