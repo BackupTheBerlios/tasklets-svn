@@ -1,6 +1,5 @@
 
 from collections import deque
-import weakref
 
 def _singleton(cls):
     instance = []
@@ -15,28 +14,54 @@ def _singleton(cls):
 #
 
 class WaitObject(object):
+    """
+    A WaitObject is an object a softlet can wait on by yield'ing it.
+    """
+
     def __init__(self):
-        self.switcher = current_switcher()
+#         self.switcher = current_switcher()
+        self.switchers_ref_cnt = {}
         self.waiters = deque()
         self.ready = False
+        self.event_sinks = []
 
-    def get_waiter(self):
-        try:
-            return self.waiters.popleft()
-        except IndexError:
+    def get_waiter(self, switcher=None):
+        if not self.waiters:
             return None
+#         if n == 1:
+#             self._update_ready(False)
+        waiter = self.waiters.popleft()
+        switcher = waiter.switcher
+        if self.switchers_ref_cnt[switcher] == 1:
+            del self.switchers_ref_cnt[switcher]
+            switcher.remove_ready_object(self)
+        else:
+            self.switchers_ref_cnt[switcher] -= 1
+        return waiter
 
     def add_waiter(self, waiter):
         self.waiters.append(waiter)
-        if len(self.waiters) == 1:
-            self.switcher.set_ready(self, self.ready)
+        switcher = waiter.switcher
+        d = self.switchers_ref_cnt
+        try:
+            d[switcher] += 1
+        except KeyError:
+            d[switcher] = 1
+            if self.ready:
+                switcher.add_ready_object(self)
+#         if len(self.waiters) == 1:
+#             self._update_ready(self.triggered)
 
     def set_ready(self, ready):
-        self.ready = ready
-        # Useful optimization with many threads joining
-        # without any other thread waiting on them
-        if self.waiters:
-            self.switcher.set_ready(self, ready)
+        if ready != self.ready:
+            self.ready = ready
+            for switcher in self.switchers_ref_cnt:
+                switcher.set_ready(self, ready)
+#         if self.waiters:
+#         self._update_ready(ready)
+
+    def ask_notifications(self, func):
+        self.event_sinks.append(func)
 
     def __or__(self, b):
         if b is None:
@@ -46,6 +71,7 @@ class WaitObject(object):
 
     def __ror__(self, b):
         return self.__or__(b)
+
 
 class _Ready(WaitObject):
     def __init__(self):
@@ -59,6 +85,7 @@ Ready = _singleton(_Ready)
 class Softlet(WaitObject):
     def __init__(self, func=None):
         WaitObject.__init__(self)
+        self.switcher = current_switcher()
         self.restart(func)
 
     def restart(self, func=None):
@@ -92,6 +119,11 @@ class Queue(WaitObject):
         return self.data.pop(0)
 
 class LogicalOr(WaitObject):
+    """
+    Logical OR between several WaitObjects.
+    The natural way to construct it is to use the "|" operator
+    between those objects.
+    """
     def __init__(self, objs):
         WaitObject.__init__(self)
         def _wait(o):
@@ -157,15 +189,18 @@ class Switcher(object):
         else:
             self.ready_objects.discard(wait_object)
 
+    def add_ready_object(self, wait_object):
+        self.ready_objects.add(wait_object)
+
+    def remove_ready_object(self, wait_object):
+        self.ready_objects.remove(wait_object)
+
     def run(self):
         while self.threads:
             if not self.ready_objects:
                 raise Exception("softlets starved")
             for r in self.ready_objects:
                 thread = r.get_waiter()
-                if thread is None:
-                    self.ready_objects.discard(r)
-                    break
                 if thread.finished:
                     continue
                 self.nb_switches += 1

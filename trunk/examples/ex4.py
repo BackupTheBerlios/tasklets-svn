@@ -6,29 +6,31 @@ try:
 except ImportError:
     import _autopath, softlets
 
-class Subthread(softlets.Softlet):
-    def __init__(self, name, count):
-        softlets.Softlet.__init__(self)
-        self.name = name
-        self.count = count
+def sub_thread(queue, name, count):
+    print "begin subthread %s" % name
+    for i in range(count):
+        queue.put("%s_%d" % (name, i))
+        yield softlets.Ready()
+    print "end subthread %s" % name
 
-    def run(self):
-        print "begin subthread %s" % self.name
-        for i in range(self.count):
-            yield softlets.Ready()
-        print "end subthread %s" % self.name
-
-def or_thread():
+def or_thread(queues, count):
     print "begin main thread"
     n = 3
     cond = None
-    for i in range(3):
-        cond = cond | Subthread(name=chr(ord('A') + i), count=n)
-    for i in range(3 * n):
+    for q in queues:
+        cond = cond | q
+    for i in range(count * len(queues)):
         yield cond
-        print cond.pop().name
+        print "got %s" % cond.pop().get()
     print "end main thread"
 
-softlets.Softlet(or_thread())
+nb_queues = 4
+iterations = 2
+queues = []
+for i in range(nb_queues):
+    q = softlets.Queue()
+    softlets.Softlet(sub_thread(q, chr(ord('A') + i), iterations))
+    queues.append(q)
+softlets.Softlet(or_thread(queues, iterations))
 softlets.main_loop()
 
