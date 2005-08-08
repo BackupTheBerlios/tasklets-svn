@@ -33,6 +33,7 @@ class WaitObject(object):
     """
 
     def __init__(self):
+        # Waiters are keyed by their respective switcher
         self.waiters = {}
         self.ready = False
         self.event_sinks = []
@@ -46,15 +47,6 @@ class WaitObject(object):
         if not q:
             del self.waiters[switcher]
             switcher.remove_ready_object(self)
-        return waiter
-
-        waiter = self.waiters.popleft()
-        switcher = waiter.switcher
-        if self.switchers_ref_cnt[switcher] == 1:
-            del self.switchers_ref_cnt[switcher]
-            switcher.remove_ready_object(self)
-        else:
-            self.switchers_ref_cnt[switcher] -= 1
         return waiter
 
     def add_waiter(self, waiter):
@@ -182,7 +174,7 @@ class LogicalOr(WaitObject):
 
 # Wicked idea: rewrite the switcher as a generator that yields
 # the next thread to be scheduled.
-# Then, write a metaswitcher that will iterate through the switcher.
+# Then, write a metaswitcher that will iterate on the switcher.
 
 class Switcher(object):
     """
