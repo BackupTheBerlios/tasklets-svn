@@ -33,17 +33,21 @@ class WaitObject(object):
     """
 
     def __init__(self):
-#         self.switcher = current_switcher()
-        self.switchers_ref_cnt = {}
-        self.waiters = deque()
+        self.waiters = {}
         self.ready = False
         self.event_sinks = []
 
-    def get_waiter(self, switcher=None):
-        if not self.waiters:
+    def get_waiter(self, switcher):
+        try:
+            q = self.waiters[switcher]
+        except KeyError:
             return None
-#         if n == 1:
-#             self._update_ready(False)
+        waiter = q.popleft()
+        if not q:
+            del self.waiters[switcher]
+            switcher.remove_ready_object(self)
+        return waiter
+
         waiter = self.waiters.popleft()
         switcher = waiter.switcher
         if self.switchers_ref_cnt[switcher] == 1:
@@ -54,25 +58,22 @@ class WaitObject(object):
         return waiter
 
     def add_waiter(self, waiter):
-        self.waiters.append(waiter)
         switcher = waiter.switcher
-        d = self.switchers_ref_cnt
         try:
-            d[switcher] += 1
+            self.waiters[switcher].append(waiter)
         except KeyError:
-            d[switcher] = 1
+            self.waiters[switcher] = deque([waiter])
             if self.ready:
                 switcher.add_ready_object(self)
-#         if len(self.waiters) == 1:
-#             self._update_ready(self.triggered)
+        return
 
     def set_ready(self, ready):
         if ready != self.ready:
             self.ready = ready
-            for switcher in self.switchers_ref_cnt:
+            for func in self.event_sinks:
+                func(ready)
+            for switcher in self.waiters:
                 switcher.set_ready(self, ready)
-#         if self.waiters:
-#         self._update_ready(ready)
 
     def ask_notifications(self, func):
         self.event_sinks.append(func)
@@ -185,7 +186,7 @@ class LogicalOr(WaitObject):
 
 class Switcher(object):
     """
-    The main switching loop. Handles WaitObjects and Threads.
+    The main switching loop. Handles WaitObjects and Softlets.
     """
 
     def __init__(self):
@@ -220,7 +221,7 @@ class Switcher(object):
             if not self.ready_objects:
                 raise Exception("softlets starved")
             for r in self.ready_objects:
-                thread = r.get_waiter()
+                thread = r.get_waiter(self)
                 if thread.finished:
                     continue
                 self.nb_switches += 1
