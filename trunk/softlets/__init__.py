@@ -1,4 +1,5 @@
 
 """Softlets: a pure Python cooperative multithreading package."""
 
-from core import *
+from softlets.core import *
+from softlets.queue import *

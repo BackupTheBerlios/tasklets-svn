@@ -10,6 +10,10 @@ def _singleton(cls):
         return instance[0]
     return wrapper
 
+#
+# For future use, when we will handle multiple switchers
+# in different system (preemptive) threads
+#
 _lock = threading.Lock()
 
 def _protected(func, lock=_lock):
@@ -127,66 +131,6 @@ class _Ready(WaitObject):
 Ready = _singleton(_Ready)
 
 
-class Softlet(WaitObject):
-    def __init__(self, func=None, standalone=False):
-        """
-        Create Softlet from given generator, or from
-        the overriden run() method if "func" is not specified.
-        If "standalone" is True, Softlet won't be killed
-        when parent terminates.
-        """
-        WaitObject.__init__(self)
-        self.standalone = standalone
-        self.switcher = current_switcher()
-        self.children = set()
-        if not standalone:
-            self.parent = self.switcher.current_thread
-            if self.parent:
-                self.parent.children.add(self)
-        else:
-            self.parent = None
-        self.start(func)
-
-    def start(self, func=None):
-        self.runner = func or self.run()
-        self.finished = False
-        self.set_ready(False)
-        self.switcher.add_thread(self)
-
-    def terminate(self):
-        self.finished = True
-        self.set_ready(True)
-        self.switcher.remove_thread(self)
-        if self.parent:
-            self.parent.children.remove(self)
-        while True:
-            try:
-                child = iter(self.children).next()
-            except StopIteration:
-                break
-            else:
-#                 print "killing child %r" % child
-                child.terminate()
-
-class Queue(WaitObject):
-    """
-    A general message queue to communicate between threads.
-    Can contain any kind of objects.
-    """
-    def __init__(self):
-        WaitObject.__init__(self)
-        self.data = []
-
-    def put(self, value):
-        if not self.data:
-            self.set_ready(True)
-        self.data.append(value)
-
-    def get(self):
-        if len(self.data) == 1:
-            self.set_ready(False)
-        return self.data.pop(0)
-
 class MultipleWaitObject(WaitObject):
     """
     Base class for combinations of several WaitObjects.
@@ -267,6 +211,58 @@ class LogicalAnd(MultipleWaitObject):
 
 
 #
+# Softlet object
+#
+
+class Softlet(WaitObject):
+    """
+    A Softlet is an object that represents a cooperative thread.
+    A Softlet is automatically registered to a specific switcher
+    which handles the scheduling of all softlets attached to it.
+    (for now and by default, there is only one switcher)
+    """
+
+    def __init__(self, func=None, standalone=False):
+        """
+        Create Softlet from given generator, or from
+        the overriden run() method if "func" is not specified.
+        If "standalone" is True, Softlet won't be killed
+        when parent terminates.
+        """
+        WaitObject.__init__(self)
+        self.standalone = standalone
+        self.switcher = current_switcher()
+        self.children = set()
+        if not standalone:
+            self.parent = self.switcher.current_thread
+            if self.parent:
+                self.parent.children.add(self)
+        else:
+            self.parent = None
+        self.start(func)
+
+    def start(self, func=None):
+        self.runner = func or self.run()
+        self.finished = False
+        self.set_ready(False)
+        self.switcher.add_thread(self)
+
+    def terminate(self):
+        self.finished = True
+        self.set_ready(True)
+        self.switcher.remove_thread(self)
+        if self.parent:
+            self.parent.children.remove(self)
+        while True:
+            try:
+                child = iter(self.children).next()
+            except StopIteration:
+                break
+            else:
+                child.terminate()
+
+
+#
 # Main loop
 #
 
@@ -324,6 +320,7 @@ class Switcher(object):
                     thread.terminate()
                 except:
 #                     _lock.acquire()
+                    self.current_thread = None
                     raise
                 else:
 #                     _lock.acquire()
@@ -337,7 +334,20 @@ class Switcher(object):
 #
 
 current_switcher = _singleton(Switcher)
+current_switcher.__doc__ = """
+Returns the switcher currently in use.
+"""
+
+def current_softlet():
+    """
+    Returns the currently running softlet,
+    or None if not called from a softlet.
+    """
+    return current_switcher().current_thread
 
 def main_loop(switcher=None):
+    """
+    Runs the softlets main loop.
+    """
     switcher = switcher or current_switcher()
     switcher.run()
