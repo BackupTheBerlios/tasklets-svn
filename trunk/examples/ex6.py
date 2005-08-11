@@ -12,17 +12,14 @@ def subthread(name):
     time.sleep(1)
     yield softlets.Ready()
     time.sleep(1)
-    print "end subthread %s" % name
+    print "** error: we should never get here"
 
 def main_thread():
     print "begin main thread"
     ta = softlets.Softlet(subthread('A'))
     tb = softlets.Softlet(subthread('B'))
-    yield ta
-    print "A finished"
-    yield tb
-    print "B finished"
-    print "end main thread"
+    yield softlets.Ready()
+    print "end main thread, killing subthreads"
 
 softlets.Softlet(main_thread())
 softlets.main_loop()

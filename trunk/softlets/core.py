@@ -159,9 +159,14 @@ class Softlet(WaitObject):
         self.switcher.remove_thread(self)
         if self.parent:
             self.parent.children.remove(self)
-        for child in self.children:
-            print "killing child %r" % child
-            child.terminate()
+        while True:
+            try:
+                child = iter(self.children).next()
+            except StopIteration:
+                break
+            else:
+#                 print "killing child %r" % child
+                child.terminate()
 
 class Queue(WaitObject):
     """
@@ -202,14 +207,21 @@ class MultipleWaitObject(WaitObject):
             self.ready_objs.discard(obj)
         self.update_readiness()
 
-    def pop(self):
+    def get(self):
         try:
-            obj = self.ready_objs.pop()
-        except IndexError:
-            obj = None
-        self.update_readiness()
-        return obj
+            return iter(self.ready_objs).next()
+        except StopIteration:
+            return None
 
+    def objects(self):
+        while True:
+            try:
+                obj = iter(self.ready_objs).next()
+            except StopIteration:
+                break
+            else:
+#                 self.update_readiness()
+                yield obj
 
 class LogicalOr(MultipleWaitObject):
     """
