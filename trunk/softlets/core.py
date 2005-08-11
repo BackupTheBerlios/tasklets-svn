@@ -36,9 +36,22 @@ class WaitObject(object):
         # Waiters are keyed by their respective switcher
         self.waiters = {}
         self.ready = False
-        self.event_sinks = []
+        self.readiness_callbacks = []
+        self.armed = False
+
+    def arm(self):
+        """
+        Can be overriden if some specific actions need to
+        be taken the first time the WaitObject is armed
+        (i.e. waited upon).
+        """
+        pass
 
     def get_waiter(self, switcher):
+        """
+        Get one of the softlets waiting upon this WaitObject,
+        depending on the switcher.
+        """
         try:
             q = self.waiters[switcher]
         except KeyError:
@@ -50,6 +63,12 @@ class WaitObject(object):
         return waiter
 
     def add_waiter(self, waiter):
+        """
+        Add a softlet waiting upon this WaitObject.
+        """
+        if not self.armed:
+            self.arm()
+            self.armed = True
         switcher = waiter.switcher
         try:
             self.waiters[switcher].append(waiter)
@@ -57,18 +76,28 @@ class WaitObject(object):
             self.waiters[switcher] = deque([waiter])
             if self.ready:
                 switcher.add_ready_object(self)
-        return
 
     def set_ready(self, ready):
+        """
+        Sets whether the WaitObject is ready or not.
+        (i.e. whether a softlet can be waken)
+        """
         if ready != self.ready:
             self.ready = ready
-            for func in self.event_sinks:
-                func(ready)
+            for callback in self.readiness_callbacks:
+                callback(self, ready)
             for switcher in self.waiters:
                 switcher.set_ready(self, ready)
 
-    def ask_notifications(self, func):
-        self.event_sinks.append(func)
+    def notify_readiness(self, callback):
+        """
+        Ask to be notified when the WaitObject's readiness changes.
+        The function will be called back with two arguments:
+        the WaitObject, and its ready state (True or False).
+        """
+        self.readiness_callbacks.append(callback)
+        if self.ready:
+            callback(self, True)
 
     def __or__(self, b):
         if b is None:
@@ -78,6 +107,15 @@ class WaitObject(object):
 
     def __ror__(self, b):
         return self.__or__(b)
+
+    def __and__(self, b):
+        if b is None:
+            return self
+        assert isinstance(b, WaitObject)
+        return LogicalAnd([self, b])
+
+    def __rand__(self, b):
+        return self.__and__(b)
 
 
 class _Ready(WaitObject):
@@ -90,12 +128,26 @@ Ready = _singleton(_Ready)
 
 
 class Softlet(WaitObject):
-    def __init__(self, func=None):
+    def __init__(self, func=None, standalone=False):
+        """
+        Create Softlet from given generator, or from
+        the overriden run() method if "func" is not specified.
+        If "standalone" is True, Softlet won't be killed
+        when parent terminates.
+        """
         WaitObject.__init__(self)
+        self.standalone = standalone
         self.switcher = current_switcher()
-        self.restart(func)
+        self.children = set()
+        if not standalone:
+            self.parent = self.switcher.current_thread
+            if self.parent:
+                self.parent.children.add(self)
+        else:
+            self.parent = None
+        self.start(func)
 
-    def restart(self, func=None):
+    def start(self, func=None):
         self.runner = func or self.run()
         self.finished = False
         self.set_ready(False)
@@ -105,6 +157,11 @@ class Softlet(WaitObject):
         self.finished = True
         self.set_ready(True)
         self.switcher.remove_thread(self)
+        if self.parent:
+            self.parent.children.remove(self)
+        for child in self.children:
+            print "killing child %r" % child
+            child.terminate()
 
 class Queue(WaitObject):
     """
@@ -125,35 +182,43 @@ class Queue(WaitObject):
             self.set_ready(False)
         return self.data.pop(0)
 
-class LogicalOr(WaitObject):
+class MultipleWaitObject(WaitObject):
+    """
+    Base class for combinations of several WaitObjects.
+    """
+    def __init__(self, objs):
+        WaitObject.__init__(self)
+        self.objs = list(objs)
+        self.ready_objs = set()
+
+    def arm(self):
+        for obj in self.objs:
+            obj.notify_readiness(self.on_object_ready)
+
+    def on_object_ready(self, obj, ready):
+        if ready:
+            self.ready_objs.add(obj)
+        else:
+            self.ready_objs.discard(obj)
+        self.update_readiness()
+
+    def pop(self):
+        try:
+            obj = self.ready_objs.pop()
+        except IndexError:
+            obj = None
+        self.update_readiness()
+        return obj
+
+
+class LogicalOr(MultipleWaitObject):
     """
     Logical OR between several WaitObjects.
     The natural way to construct it is to use the "|" operator
     between those objects.
     """
-    def __init__(self, objs):
-        WaitObject.__init__(self)
-        def _wait(o):
-#             while o in self.objs:
-                yield o
-                self.ready_objs.append(o)
-                self.set_ready(True)
-
-        self.objs = list(objs)
-        self.ready_objs = []
-        for obj in objs:
-            thread = Softlet(_wait(obj))
-
-    def discard(self, obj):
-        self.objs(remove(obj))
-
-    def pop(self):
-        if len(self.ready_objs) == 1:
-            self.set_ready(False)
-        try:
-            return self.ready_objs.pop()
-        except IndexError:
-            return None
+    def update_readiness(self):
+        self.set_ready(len(self.ready_objs) > 0)
 
     def __or__(self, b):
         if b is None:
@@ -166,6 +231,27 @@ class LogicalOr(WaitObject):
 
     def __ror__(self, b):
         return self.__or__(b)
+
+class LogicalAnd(MultipleWaitObject):
+    """
+    Logical OR between several WaitObjects.
+    The natural way to construct it is to use the "&" operator
+    between those objects.
+    """
+    def update_readiness(self):
+        self.set_ready(len(self.ready_objs) == len(self.objs))
+
+    def __and__(self, b):
+        if b is None:
+            return self
+        assert isinstance(b, WaitObject)
+        if isinstance(b, LogicalAnd):
+            return LogicalAnd(self.objs + b.objs)
+        else:
+            return LogicalAnd(self.objs + [b])
+
+    def __rand__(self, b):
+        return self.__and__(b)
 
 
 #
@@ -190,7 +276,6 @@ class Switcher(object):
     def add_thread(self, thread):
         Ready().add_waiter(thread)
         self.threads.add(thread)
-        thread.parent = self.current_thread
 
     def remove_thread(self, thread):
         self.threads.remove(thread)

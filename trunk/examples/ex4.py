@@ -24,8 +24,8 @@ def or_thread(queues, count):
         print "got %s" % cond.pop().get()
     print "end main thread"
 
-nb_queues = 4
-iterations = 2
+nb_queues = 3
+iterations = 3
 queues = []
 for i in range(nb_queues):
     q = softlets.Queue()
