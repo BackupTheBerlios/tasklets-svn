@@ -251,6 +251,7 @@ class Softlet(WaitObject):
                 self.parent.children.add(self)
         else:
             self.parent = None
+        self.waiting_on = None
         self.start(func)
 
     def start(self, func=None):
@@ -273,6 +274,9 @@ class Softlet(WaitObject):
             else:
                 child.terminate()
 
+    def wait_on(self, wait_object):
+        wait_object.add_waiter(self)
+        self.waiting_on = wait_object
 
 #
 # Main loop
@@ -294,7 +298,9 @@ class Switcher(object):
         self.current_thread = None
 
     def add_thread(self, thread):
-        Ready().add_waiter(thread)
+        wait_object = Ready()
+        wait_object.add_waiter(thread)
+        thread.waiting_on = wait_object
         self.threads.add(thread)
 
     def remove_thread(self, thread):
@@ -326,18 +332,17 @@ class Switcher(object):
                     self.current_thread = thread
 #                     _lock.release()
                     wait_object = thread.runner.next()
-                except StopIteration:
+                except Exception, e:
 #                     _lock.acquire()
                     self.current_thread = None
                     thread.terminate()
-                except:
-#                     _lock.acquire()
-                    self.current_thread = None
-                    raise
+                    if not isinstance(e, StopIteration):
+                        raise
                 else:
 #                     _lock.acquire()
                     self.current_thread = None
                     wait_object.add_waiter(thread)
+                    thread.waiting_on = wait_object
                 break
 #         _lock.release()
 
