@@ -1,4 +1,5 @@
 
+
 # Try to autodetect where in the hierarchy a package is.
 # Useful when running examples in subdirectories without
 # wanting to install the package in the system dirs.
