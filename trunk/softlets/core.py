@@ -10,6 +10,18 @@ def _singleton(cls):
         return instance[0]
     return wrapper
 
+def _local_singleton(cls):
+    instances = {}
+    def wrapper(*args, **kargs):
+        switcher = current_switcher()
+        try:
+            instance = instances[switcher]
+        except KeyError:
+            instance = cls(*args, **kargs)
+            instances[switcher] = instance
+        return instance
+    return wrapper
+
 #
 # For future use, when we will handle multiple switchers
 # in different system (preemptive) threads
