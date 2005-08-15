@@ -69,8 +69,8 @@ class _TimeThread(threading.Thread):
                     self.interrupt.wait()
                     continue
                 cb = self.callbacks[0]
-                timeout = cb and (cb.timestamp - time.time())
-                if timeout is None or timeout > 0:
+                timeout = cb.timestamp - time.time()
+                if timeout > 0:
                     r = self.interrupt.wait(timeout)
                     # If the next callback has changed at return, it means we
                     # have been interrupted by the main thread
