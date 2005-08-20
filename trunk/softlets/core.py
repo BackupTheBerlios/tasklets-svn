@@ -23,21 +23,38 @@ def _local_singleton(cls):
     return wrapper
 
 #
-# For future use, when we will handle multiple switchers
-# in different system (preemptive) threads
+# To be used when other threads have to interact with
+# a switcher thread.
 #
 _lock = threading.Lock()
 
-def _protected(func, lock=_lock):
-    def f(*args, **kargs):
-        lock.acquire()
-        func(*args, **kargs)
-        lock.release()
-    return f
+def _protect(func, lock=None):
+    lock = lock or _lock
+    try:
+        func.__unprotected
+    except AttributeError:
+        def wrapper(*args, **kargs):
+            lock.acquire()
+            try:
+                return func(*args, **kargs)
+            finally:
+                lock.release()
+        wrapper.__unprotected = func
+        return wrapper
+    else:
+        return func
 
-def _unprotected(func):
-    return func
+def _unprotect(func):
+    try:
+        return func.__unprotected
+    except AttributeError:
+        return func
 
+class NoLock(object):
+    def acquire(self):
+        pass
+    def release(self):
+        pass
 
 #
 # Different kinds of objects providing a simple synchronization scheme
@@ -54,6 +71,14 @@ class WaitObject(object):
         self.ready = False
         self.readiness_callbacks = []
         self.armed = False
+        self.is_async = False
+
+    def protect(self, lock=None):
+        lock = lock or _lock
+        self.get_waiter = _protect(self.get_waiter)
+        self.add_waiter = _protect(self.add_waiter)
+        self.set_ready = _protect(self.set_ready)
+        self.notify_readiness = _protect(self.notify_readiness)
 
     def arm(self):
         """
@@ -76,6 +101,8 @@ class WaitObject(object):
         if not q:
             del self.waiters[switcher]
             switcher.remove_ready_object(self)
+            if self.is_async:
+                switcher.remove_async_wait(self)
         return waiter
 
     def add_waiter(self, waiter):
@@ -92,6 +119,8 @@ class WaitObject(object):
             self.waiters[switcher] = deque([waiter])
             if self.ready:
                 switcher.add_ready_object(self)
+            if self.is_async:
+                switcher.add_async_wait(self)
 
     def set_ready(self, ready):
         """
@@ -133,6 +162,9 @@ class WaitObject(object):
     def __rand__(self, b):
         return self.__and__(b)
 
+    def __invert__(self):
+        return LogicalNot(self)
+
 
 class _Ready(WaitObject):
     def __init__(self):
@@ -141,6 +173,26 @@ class _Ready(WaitObject):
 
 # Special-casing Ready improves scalability with many threads
 Ready = _singleton(_Ready)
+
+
+class LogicalNot(WaitObject):
+    """
+    Logical negation of a WaitObject.
+    This class is invoked with the "~" operator.
+    """
+    def __init__(self, obj):
+        WaitObject.__init__(self)
+        self.obj = obj
+        self.ready = True
+
+    def arm(self):
+        self.obj.notify_readiness(self.on_object_ready)
+
+    def on_object_ready(self, obj, ready):
+        self.set_ready(not ready)
+
+    def __invert__(self):
+        return self.obj
 
 
 class MultipleWaitObject(WaitObject):
@@ -176,8 +228,8 @@ class MultipleWaitObject(WaitObject):
             except StopIteration:
                 break
             else:
-#                 self.update_readiness()
                 yield obj
+
 
 class LogicalOr(MultipleWaitObject):
     """
@@ -234,17 +286,20 @@ class Softlet(WaitObject):
     (for now and by default, there is only one switcher)
     """
 
-    def __init__(self, func=None, standalone=False):
+    def __init__(self, func=None, standalone=False, daemon=False):
         """
         Create Softlet from given generator, or from
         the overriden run() method if "func" is not specified.
         If "standalone" is True, Softlet won't be killed
         when parent terminates.
+        If "daemon" is True, Softlet is automatically killed
+        when no non-daemon Softlets are left.
         """
         WaitObject.__init__(self)
         self.standalone = standalone
         self.switcher = current_switcher()
         self.children = set()
+        self.daemon = daemon
         if not standalone:
             self.parent = self.switcher.current_thread
             if self.parent:
@@ -274,9 +329,6 @@ class Softlet(WaitObject):
             else:
                 child.terminate()
 
-    def wait_on(self, wait_object):
-        wait_object.add_waiter(self)
-        self.waiting_on = wait_object
 
 #
 # Main loop
@@ -295,6 +347,8 @@ class Switcher(object):
         self.threads = set()
         self.ready_objects = set()
         self.nb_switches = 0
+        self.nb_daemons = 0
+        self.nb_async_waits = 0
         self.current_thread = None
 
     def add_thread(self, thread):
@@ -302,15 +356,27 @@ class Switcher(object):
         wait_object.add_waiter(thread)
         thread.waiting_on = wait_object
         self.threads.add(thread)
+        if thread.daemon:
+            self.nb_daemons += 1
 
     def remove_thread(self, thread):
         self.threads.remove(thread)
+        if thread.daemon:
+            self.nb_daemons -= 1
+
+    def add_async_wait(self, wait_object):
+        self.nb_async_waits += 1
+
+    def remove_async_wait(self, wait_object):
+        self.nb_async_waits -= 1
 
     def set_ready(self, wait_object, ready):
         if ready:
             self.ready_objects.add(wait_object)
         else:
             self.ready_objects.discard(wait_object)
+            if not self.ready_objects and not self.nb_async_waits:
+                raise Exception("softlets starved")
 
     def add_ready_object(self, wait_object):
         self.ready_objects.add(wait_object)
@@ -320,31 +386,29 @@ class Switcher(object):
 
     def run(self):
 #         _lock.acquire()
-        while self.threads:
-            if not self.ready_objects:
-                raise Exception("softlets starved")
+        while len(self.threads) > self.nb_daemons:
             for r in self.ready_objects:
+#                 _lock.release()
                 thread = r.get_waiter(self)
-                if thread.finished:
-                    continue
+                if thread is None or thread.finished:
+                    break
                 self.nb_switches += 1
                 try:
                     self.current_thread = thread
-#                     _lock.release()
                     wait_object = thread.runner.next()
                 except Exception, e:
-#                     _lock.acquire()
                     self.current_thread = None
                     thread.terminate()
                     if not isinstance(e, StopIteration):
                         raise
                 else:
-#                     _lock.acquire()
                     self.current_thread = None
                     wait_object.add_waiter(thread)
                     thread.waiting_on = wait_object
                 break
-#         _lock.release()
+#             else:
+#                 _lock.release()
+#             _lock.acquire()
 
 #
 # Functions

@@ -1,89 +1,42 @@
 
-import time
-import threading
-from heapq import heappush, heappop, heapify
-from operator import itemgetter
+from softlets.core import WaitObject
+from softlets.timethread import TimeThread
 
-from softlets.core import WaitObject, _singleton
+__all__ = ['Timer']
 
-def _p(s):
-    def p():
-        print s
-    return p
+class Timer(WaitObject):
+    """
+    This object becomes ready when a certain delay has expired.
+    """
+    timethread = TimeThread()
+    timethread_started = False
+    lock = timethread.get_lock()
 
-def _q(s):
-    def q():
-        if not s % 100:
-            print s
-    return q
+    def __init__(self, delay):
+        WaitObject.__init__(self)
+        self.delay = delay
+        self.callback = None
+        self.is_async = True
+        self.protect()
+        if not self.timethread_started:
+            self.timethread.start()
+            self.timethread_started = True
+        self.reschedule()
 
-class _Callback(tuple):
-    def __new__(cls, timestamp, func):
-        self = tuple.__new__(cls, (timestamp, func))
-        return self
-    timestamp = property(itemgetter(0))
-    func = property(itemgetter(1))
-
-class _TimeThread(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.callbacks = []
-        self.interrupt = threading.Condition()
-        self.running = False
-        self.setDaemon(True)
-
-    def add_callback(self, delay, func):
-        timestamp = time.time() + delay
-        callback = _Callback(timestamp, func)
+    def reschedule(self):
+        # take the lock to ensure the callback doesn't
+        # expire in the meantime
+        self.lock.acquire()
         try:
-            self.interrupt.acquire()
-            heappush(self.callbacks, callback)
-            if self.callbacks[0] is callback:
-                self.interrupt.notify()
+            if self.callback:
+                self.timethread.remove_timer(self.callback)
+            self.set_ready(False)
+            self.callback = self.timethread.add_timer(self.delay, self.on_delay_expired, keep_lock=True)
         finally:
-            self.interrupt.release()
-        return callback
+            self.lock.release()
 
-    def remove_callback(self, callback):
-        try:
-            self.interrupt.acquire()
-            if self.callbacks[0] is callback:
-                self.interrupt.notify()
-            self.callbacks.remove(callback)
-            heapify(self.callbacks)
-        finally:
-            self.interrupt.release()
+    def on_delay_expired(self):
+        # the timethread has already taken the lock for us
+        self.set_ready(True)
+        self.callback = None
 
-    def finish(self):
-        self.running = False
-        self.interrupt.acquire()
-        self.interrupt.notify()
-        self.interrupt.release()
-
-    def run(self):
-        self.running = True
-        try:
-            self.interrupt.acquire()
-            while self.running:
-                if not self.callbacks:
-                    self.interrupt.wait()
-                    continue
-                cb = self.callbacks[0]
-                timeout = cb.timestamp - time.time()
-                if timeout > 0:
-                    r = self.interrupt.wait(timeout)
-                    # If the next callback has changed at return, it means we
-                    # have been interrupted by the main thread
-                    if not self.callbacks or cb != self.callbacks[0]:
-                        continue
-                heappop(self.callbacks)
-                # Release the lock in case the func() wants to
-                # add/remove other callbacks
-                self.interrupt.release()
-                cb.func()
-                self.interrupt.acquire()
-        finally:
-            self.interrupt.release()
-
-
-TimeThread = _singleton(_TimeThread)
