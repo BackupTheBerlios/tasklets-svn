@@ -7,22 +7,23 @@ try:
 except ImportError:
     import _autopath, softlets
 
-def subthread(name):
+def subthread(name, delay):
     print "begin subthread %s" % name
-    time.sleep(1)
-    yield softlets.Ready()
-    time.sleep(1)
+    yield softlets.Timer(delay)
     print "end subthread %s" % name
 
 def main_thread():
-    print "begin main thread"
-    ta = softlets.Softlet(subthread('A'))
-    tb = softlets.Softlet(subthread('B'))
-    yield ta
-    print "A finished"
-    yield tb
-    print "B finished"
-    print "end main thread"
+    print "waiting on two threads"
+    ta = softlets.Softlet(subthread('A', 1))
+    tb = softlets.Softlet(subthread('B', 2))
+    yield ta | tb
+    if ta.finished:
+        print "A finished"
+        yield tb
+    elif tb.finished:
+        print "B finished"
+        yield ta
+    print "A & B finished"
 
 softlets.Softlet(main_thread())
 softlets.main_loop()

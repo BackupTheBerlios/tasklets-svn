@@ -9,17 +9,15 @@ except ImportError:
 
 def subthread(name):
     print "begin subthread %s" % name
-    time.sleep(1)
-    yield softlets.Ready()
-    time.sleep(1)
+    yield softlets.Timer(2)
     print "** error: we should never get here"
 
 def main_thread():
-    print "begin main thread"
+    print "main thread will kill subthreads on ending"
     ta = softlets.Softlet(subthread('A'))
     tb = softlets.Softlet(subthread('B'))
-    yield softlets.Ready()
-    print "end main thread, killing subthreads"
+    yield softlets.Timer(1)
+    print "end main thread"
 
 softlets.Softlet(main_thread())
 softlets.main_loop()
