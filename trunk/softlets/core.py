@@ -1,6 +1,7 @@
 
 from collections import deque
 import threading
+from thread import get_ident
 
 def _singleton(cls):
     instance = []
@@ -50,11 +51,6 @@ def _unprotect(func):
     except AttributeError:
         return func
 
-class NoLock(object):
-    def acquire(self):
-        pass
-    def release(self):
-        pass
 
 #
 # Different kinds of objects providing a simple synchronization scheme
@@ -183,7 +179,8 @@ class LogicalNot(WaitObject):
     def __init__(self, obj):
         WaitObject.__init__(self)
         self.obj = obj
-        self.ready = True
+        self.is_async = obj.is_async
+        self.set_ready(not obj.ready)
 
     def arm(self):
         self.obj.notify_readiness(self.on_object_ready)
@@ -206,6 +203,7 @@ class MultipleWaitObject(WaitObject):
 
     def arm(self):
         for obj in self.objs:
+            self.is_async |= obj.is_async
             obj.notify_readiness(self.on_object_ready)
 
     def on_object_ready(self, obj, ready):
@@ -348,8 +346,11 @@ class Switcher(object):
         self.ready_objects = set()
         self.nb_switches = 0
         self.nb_daemons = 0
-        self.nb_async_waits = 0
         self.current_thread = None
+        # Async signalling (objects waken out of the switcher thread)
+        self.tid = get_ident()
+        self.nb_async_waits = 0
+        self.async_cond = threading.Condition()
 
     def add_thread(self, thread):
         wait_object = Ready()
@@ -365,30 +366,48 @@ class Switcher(object):
             self.nb_daemons -= 1
 
     def add_async_wait(self, wait_object):
+        # Called in-thread
         self.nb_async_waits += 1
 
     def remove_async_wait(self, wait_object):
+        # Called in-thread
         self.nb_async_waits -= 1
 
     def set_ready(self, wait_object, ready):
+        # May be called async (out-of-thread)
+        async = (get_ident() != self.tid)
         if ready:
-            self.ready_objects.add(wait_object)
+            if async:
+                self.async_cond.acquire()
+                self.ready_objects.add(wait_object)
+                self.async_cond.notify()
+                self.async_cond.release()
+            else:
+                self.ready_objects.add(wait_object)
         else:
             self.ready_objects.discard(wait_object)
-            if not self.ready_objects and not self.nb_async_waits:
-                raise Exception("softlets starved")
 
     def add_ready_object(self, wait_object):
+        # Called in-thread
         self.ready_objects.add(wait_object)
 
     def remove_ready_object(self, wait_object):
+        # Called in-thread
         self.ready_objects.remove(wait_object)
 
     def run(self):
-#         _lock.acquire()
+        _ar_null = (lambda: 0, lambda: 0)
+        _ar_async = (self.async_cond.acquire, self.async_cond.release)
         while len(self.threads) > self.nb_daemons:
+            async = self.nb_async_waits > 0
+            A, R = async and _ar_async or _ar_null
+            A()
+            if not self.ready_objects:
+                if not async:
+                    raise Exception("softlets starved")
+                self.async_cond.wait()
             for r in self.ready_objects:
-#                 _lock.release()
+                R()
                 thread = r.get_waiter(self)
                 if thread is None or thread.finished:
                     break
@@ -406,9 +425,8 @@ class Switcher(object):
                     wait_object.add_waiter(thread)
                     thread.waiting_on = wait_object
                 break
-#             else:
-#                 _lock.release()
-#             _lock.acquire()
+            else:
+                R()
 
 #
 # Functions
