@@ -93,7 +93,6 @@ class _TimeThread(threading.Thread):
                     self.interrupt.notify()
                 self.callbacks.remove(callback)
             except (ValueError, IndexError):
-                raise
                 raise ValueError("cannot remove unknown timer '%s'" % str(callback))
             heapify(self.callbacks)
         finally:
@@ -122,11 +121,7 @@ class _TimeThread(threading.Thread):
                     if not self.callbacks or cb is not self.callbacks[0]:
                         continue
                 heappop(self.callbacks)
-                # Release the lock in case the func() wants to
-                # add/remove other callbacks
-#                 self.interrupt.release()
                 cb.func()
-#                 self.interrupt.acquire()
         finally:
             self.interrupt.release()
 
