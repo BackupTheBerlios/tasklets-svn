@@ -7,6 +7,7 @@ allocates a separate thread for each timer)
 
 import time
 import threading
+import atexit
 from heapq import heappush, heappop, heapify
 from operator import itemgetter
 
@@ -59,6 +60,7 @@ class _TimeThread(threading.Thread):
         if not self.started:
             threading.Thread.start(self)
             self.started = True
+            atexit.register(self.finish)
 
     def get_lock(self):
         return self.interrupt
@@ -101,8 +103,10 @@ class _TimeThread(threading.Thread):
     def finish(self):
         self.running = False
         self.interrupt.acquire()
+        self.callbacks = []
         self.interrupt.notify()
         self.interrupt.release()
+        self.join()
 
     def run(self):
         self.running = True
