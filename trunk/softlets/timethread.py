@@ -65,17 +65,17 @@ class _TimeThread(threading.Thread):
 
     def add_timer(self, delay, func, keep_lock=False):
         timestamp = time.time() + delay
-        callback = _Callback(timestamp, func)
         if not keep_lock:
             # If not asked otherwise, release the lock
             # in case the func() wants to add/remove other callbacks
-            def f():
+            def f(func=func):
                 self.interrupt.release()
                 try:
                     func()
                 finally:
                     self.interrupt.acquire()
             func = f
+        callback = _Callback(timestamp, func)
         try:
             self.interrupt.acquire()
             heappush(self.callbacks, callback)
