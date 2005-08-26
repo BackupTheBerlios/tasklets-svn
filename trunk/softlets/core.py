@@ -71,10 +71,10 @@ class WaitObject(object):
 
     def protect(self, lock=None):
         lock = lock or _lock
-        self.get_waiter = _protect(self.get_waiter)
-        self.add_waiter = _protect(self.add_waiter)
-        self.set_ready = _protect(self.set_ready)
-        self.notify_readiness = _protect(self.notify_readiness)
+        self.get_waiter = _protect(self.get_waiter, lock)
+        self.add_waiter = _protect(self.add_waiter, lock)
+        self.set_ready = _protect(self.set_ready, lock)
+        self.notify_readiness = _protect(self.notify_readiness, lock)
 
     def arm(self):
         """
