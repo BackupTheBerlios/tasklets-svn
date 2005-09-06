@@ -354,6 +354,7 @@ class Switcher(object):
         self.async_calls = []
 
     def add_thread(self, thread):
+        # Called in-thread
         wait_object = Ready()
         wait_object.add_waiter(thread)
         thread.waiting_on = wait_object
@@ -362,6 +363,7 @@ class Switcher(object):
             self.nb_daemons += 1
 
     def remove_thread(self, thread):
+        # Called in-thread
         self.threads.remove(thread)
         if thread.daemon:
             self.nb_daemons -= 1
