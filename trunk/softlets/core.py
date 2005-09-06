@@ -350,7 +350,7 @@ class Switcher(object):
         # Async signalling (objects waken out of the switcher thread)
         self.tid = get_ident()
         self.nb_async_waits = 0
-        self.async_cond = threading.Condition()
+        self.async_cond = threading.Condition(threading.Lock())
         self.async_calls = []
 
     def add_thread(self, thread):
