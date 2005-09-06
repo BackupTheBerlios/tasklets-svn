@@ -351,6 +351,7 @@ class Switcher(object):
         self.tid = get_ident()
         self.nb_async_waits = 0
         self.async_cond = threading.Condition()
+        self.async_calls = []
 
     def add_thread(self, thread):
         wait_object = Ready()
@@ -376,16 +377,17 @@ class Switcher(object):
     def set_ready(self, wait_object, ready):
         # May be called async (out-of-thread)
         async = (get_ident() != self.tid)
-        if ready:
-            if async:
-                self.async_cond.acquire()
-                self.ready_objects.add(wait_object)
-                self.async_cond.notify()
-                self.async_cond.release()
-            else:
-                self.ready_objects.add(wait_object)
+        if async:
+            def f():
+                self.set_ready(wait_object, ready)
+            self.push_async_call(f)
+            return
         else:
-            self.ready_objects.discard(wait_object)
+            # In-thread
+            if ready:
+                self.ready_objects.add(wait_object)
+            else:
+                self.ready_objects.discard(wait_object)
 
     def add_ready_object(self, wait_object):
         # Called in-thread
@@ -395,19 +397,31 @@ class Switcher(object):
         # Called in-thread
         self.ready_objects.remove(wait_object)
 
+    def push_async_call(self, func):
+        # Called out-of-thread
+        self.async_cond.acquire()
+        self.async_calls.append(func)
+        self.async_cond.notify()
+        self.async_cond.release()
+
+    def run_async_calls(self):
+        # Called in-thread while locked
+        for fun in self.async_calls:
+            fun()
+        del self.async_calls[:]
+
     def run(self):
-        _ar_null = (lambda: 0, lambda: 0)
-        _ar_async = (self.async_cond.acquire, self.async_cond.release)
+        A, R = (self.async_cond.acquire, self.async_cond.release)
         while len(self.threads) > self.nb_daemons:
-            async = self.nb_async_waits > 0
-            A, R = async and _ar_async or _ar_null
-            A()
-            if not self.ready_objects:
-                if not async:
-                    raise Exception("softlets starved")
-                self.async_cond.wait()
-            for r in self.ready_objects:
+            # Process pending async calls
+            if self.async_calls:
+                A()
+                self.run_async_calls()
                 R()
+            # This loop is a fake: we always break because
+            # thread calls inside the loop can change the set size
+            for r in self.ready_objects:
+                # Give control to a thread
                 thread = r.get_waiter(self)
                 if thread is None or thread.finished:
                     break
@@ -426,6 +440,13 @@ class Switcher(object):
                     thread.waiting_on = wait_object
                 break
             else:
+                # self.ready_objects is empty
+                async = self.nb_async_waits > 0
+                if not async:
+                    raise Exception("softlets starved")
+                A()
+                self.async_cond.wait()
+                self.run_async_calls()
                 R()
 
 #
