@@ -8,10 +8,11 @@ except ImportError:
 
 from softlets.queue import Queue
 
-print "A consumer without producer"
+print "A consumer without producer..."
 
 def main_thread():
     q = Queue()
+    print "... trying to fetch from queue\n"
     yield q
 
 softlets.Softlet(main_thread())

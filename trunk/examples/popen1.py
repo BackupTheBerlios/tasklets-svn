@@ -26,7 +26,7 @@ def main_thread():
     while not popen.finished:
         print "\r" + clock.next(),
         sys.stdout.flush()
-        yield popen | softlets.Timer(tick)
+        yield popen | Timer(tick)
     print "\rResult code =", popen.retcode
     print "Output:"
     print popen.popen.communicate()[0]
