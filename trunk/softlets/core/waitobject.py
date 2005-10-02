@@ -84,14 +84,20 @@ class WaitObject(object):
 
     def notify_readiness(self, callback):
         """
-        Ask to be notified when the WaitObject's readiness changes.
+        Ask to be (synchronously) notified when the WaitObject's readiness changes.
         The function will be called back with two arguments:
         the WaitObject, and its ready state (True or False).
         """
+        if not self._armed:
+            self.arm()
+            self._armed = True
         self._readiness_callbacks.append(callback)
         if self.ready:
             callback(self, True)
 
+    #
+    # Support for logical operators between WaitObjects
+    #
     def __or__(self, b):
         if b is None:
             return self

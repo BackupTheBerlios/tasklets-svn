@@ -33,21 +33,23 @@ def _singleton(cls):
 # To be used when other threads have to interact with
 # a switcher thread.
 #
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 def _protect(func, lock=None):
     lock = lock or _lock
     try:
         func.__unprotected
     except AttributeError:
-        def wrapper(*args, **kargs):
+        def new_func(*args, **kargs):
             lock.acquire()
             try:
                 return func(*args, **kargs)
             finally:
                 lock.release()
-        wrapper.__unprotected = func
-        return wrapper
+        new_func.__unprotected = func
+        new_func.__doc__ = func.__doc__
+        new_func.__name__ = func.__name__
+        return new_func
     else:
         return func
 
