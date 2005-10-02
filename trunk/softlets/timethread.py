@@ -9,9 +9,9 @@ import time
 import threading
 import atexit
 from heapq import heappush, heappop, heapify
-from operator import itemgetter
 
 from softlets.core.common import _singleton
+from softlets.util.namedtuple import NamedTuple
 
 __all__ = ['TimeThread']
 
@@ -26,23 +26,6 @@ def _q(s):
         if not s % 100:
             print s
     return q
-
-def NamedTuple(*names):
-    d = dict([(name, index) for index, name in enumerate(names)])
-    n = len(names)
-    class T(tuple):
-        def __new__(cls, *args, **kargs):
-            p = len(args)
-            assert p + len(kargs) == n
-            l = list(args) + [None] * (n - p)
-            for k, v in kargs.items():
-                i = d[k]
-                assert i >= p
-                l[i] = v
-            return tuple.__new__(cls, l)
-    for k, v in d.items():
-        setattr(T, k, property(itemgetter(v)))
-    return T
 
 _Callback = NamedTuple("timestamp", "func")
 
