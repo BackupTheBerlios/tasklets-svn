@@ -35,15 +35,17 @@ class _TimeThread(threading.Thread):
         threading.Thread.__init__(self)
         self.callbacks = []
         self.interrupt = threading.Condition()
-        self.started = False
         self.running = False
-        self.setDaemon(True)
 
     def start(self):
-        if not self.started:
-            threading.Thread.start(self)
-            self.started = True
-            atexit.register(self.finish)
+        assert not self.running, "TimeThread already started"
+        self.thread = threading.Thread(
+            target=self.run,
+            name="TimeThread polling thread")
+        self.thread.setDaemon(True)
+        self.thread.start()
+        self.running = True
+        atexit.register(self.finish)
 
     def get_lock(self):
         return self.interrupt
@@ -89,15 +91,15 @@ class _TimeThread(threading.Thread):
         self.callbacks = []
         self.interrupt.notify()
         self.interrupt.release()
-        self.join()
+        self.thread.join()
 
     def run(self):
-        self.running = True
         try:
             self.interrupt.acquire()
             while self.running:
                 if not self.callbacks:
-                    self.interrupt.wait()
+                    if self.running:
+                        self.interrupt.wait()
                     continue
                 cb = self.callbacks[0]
                 timeout = cb.timestamp - time.time()
