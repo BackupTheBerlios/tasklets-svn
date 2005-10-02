@@ -11,6 +11,13 @@ __all__ = list(subprocess.__all__)
 
 
 class Popen(WaitObject):
+    """
+    Executes a command in a subprocess (with the same args as
+    subprocess.Popen), and becomes ready when the subprocess ends.
+    The following properties are defined:
+    - popen: the underlying subprocess.Popen object
+    - retcode: the return code of the subprocess (if finished)
+    """
     def __init__(self, *args, **kargs):
         WaitObject.__init__(self)
         self.is_async = True
