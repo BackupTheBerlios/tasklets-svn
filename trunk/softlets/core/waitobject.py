@@ -1,7 +1,7 @@
 
 from collections import deque
 
-from common import *
+from softlets.core.common import *
 
 
 #

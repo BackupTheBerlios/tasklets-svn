@@ -2,8 +2,9 @@
 import threading
 from thread import get_ident
 
-from common import *
-from waitobject import WaitObject
+from softlets.core.common import *
+from softlets.core.errors import *
+from softlets.core.waitobject import WaitObject
 
 
 #
@@ -197,7 +198,7 @@ class Switcher(object):
                 # self.ready_objects is empty
                 async = self.nb_async_waits > 0
                 if not async:
-                    raise Exception("softlets starved")
+                    raise Starvation()
                 A()
                 self.async_cond.wait()
                 self.run_async_calls()
