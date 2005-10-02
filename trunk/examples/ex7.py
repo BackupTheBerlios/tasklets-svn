@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
+import sys
 try:
     import softlets
 except ImportError:
     import _autopath, softlets
 
-import sys
 from softlets.timer import Timer
+
 
 nb_threads = len(sys.argv) > 1 and int(sys.argv[1]) or 10
 step = 0.1

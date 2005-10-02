@@ -7,9 +7,13 @@ try:
 except ImportError:
     import _autopath, softlets
 
+from softlets.queue import Queue
+from softlets.timer import Timer
+
+
 def subthread(name, delay):
     print "begin subthread %s" % name
-    yield softlets.Timer(delay)
+    yield Timer(delay)
     print "end subthread %s" % name
 
 def main_thread():

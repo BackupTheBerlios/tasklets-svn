@@ -6,6 +6,7 @@ try:
 except ImportError:
     import _autopath, softlets
 
+
 # import psyco
 # psyco.full()
 

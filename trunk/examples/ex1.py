@@ -5,8 +5,11 @@ try:
 except ImportError:
     import _autopath, softlets
 
-q1 = softlets.Queue()
-q2 = softlets.Queue()
+from softlets.queue import Queue
+
+
+q1 = Queue()
+q2 = Queue()
 iterations = 3
 
 def thread_a(n, qin, qout):

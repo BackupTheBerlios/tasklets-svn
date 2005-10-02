@@ -6,6 +6,9 @@ try:
 except ImportError:
     import _autopath, softlets
 
+from softlets.queue import Queue
+
+
 def sub_thread(queue, name, count):
     print "begin subthread %s" % name
     for i in range(count):
@@ -28,7 +31,7 @@ nb_queues = 3
 iterations = 3
 queues = []
 for i in range(nb_queues):
-    q = softlets.Queue()
+    q = Queue()
     softlets.Softlet(sub_thread(q, chr(ord('A') + i), iterations))
     queues.append(q)
 softlets.Softlet(or_thread(queues, iterations))

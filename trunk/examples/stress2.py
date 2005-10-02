@@ -7,6 +7,9 @@ try:
 except ImportError:
     import _autopath, softlets
 
+from softlets.timer import Timer
+
+
 nb_threads = len(sys.argv) > 1 and int(sys.argv[1]) or 2000
 nb_sleeps = 0
 nb_simult = 0
@@ -17,7 +20,7 @@ target = time.time() + abs_delay
 def sleeping_thread():
     global nb_simult, nb_sleeps, max_simult
     nb_simult += 1
-    yield softlets.Timer(max(0.0, target - time.time()))
+    yield Timer(max(0.0, target - time.time()))
     max_simult = max(max_simult, nb_simult)
     nb_simult -= 1
     nb_sleeps += 1

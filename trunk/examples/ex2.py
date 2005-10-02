@@ -5,7 +5,10 @@ try:
 except ImportError:
     import _autopath, softlets
 
-q = softlets.Queue()
+from softlets.queue import Queue
+from softlets.timer import Timer
+
+q = Queue()
 iterations = 4
 
 print "Producer/consumer running in lock step"
@@ -18,7 +21,7 @@ def producer(n, qout):
 
 def consumer(n, qin):
     for i in range(n):
-        yield softlets.Timer(0.1)
+        yield Timer(0.1)
         yield qin
         print "Thread B got '%s'" % qin.get()
 

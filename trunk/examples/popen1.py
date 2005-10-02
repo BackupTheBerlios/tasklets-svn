@@ -8,6 +8,7 @@ try:
 except ImportError:
     import _autopath, softlets
 
+from softlets.timer import Timer
 from softlets.popen import Popen, PIPE
 
 tick = 0.3
