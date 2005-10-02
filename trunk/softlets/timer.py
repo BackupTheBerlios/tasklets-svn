@@ -18,9 +18,9 @@ class Timer(WaitObject):
         self.callback = None
         self.is_async = True
         self.protect()
-        if not self.timethread_started:
-            self.timethread.start()
-            self.timethread_started = True
+        if not Timer.timethread_started:
+            Timer.timethread.start()
+            Timer.timethread_started = True
         self.reschedule()
 
     def reschedule(self):
