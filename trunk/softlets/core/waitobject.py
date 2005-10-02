@@ -15,10 +15,10 @@ class WaitObject(object):
 
     def __init__(self):
         # Waiters are keyed by their respective switcher
-        self.waiters = {}
+        self._waiters = {}
+        self._readiness_callbacks = []
+        self._armed = False
         self.ready = False
-        self.readiness_callbacks = []
-        self.armed = False
         self.is_async = False
 
     def protect(self, lock=None):
@@ -42,12 +42,12 @@ class WaitObject(object):
         depending on the switcher.
         """
         try:
-            q = self.waiters[switcher]
+            q = self._waiters[switcher]
         except KeyError:
             return None
         waiter = q.popleft()
         if not q:
-            del self.waiters[switcher]
+            del self._waiters[switcher]
             switcher.remove_ready_object(self)
             if self.is_async:
                 switcher.remove_async_wait(self)
@@ -57,14 +57,14 @@ class WaitObject(object):
         """
         Add a softlet waiting upon this WaitObject.
         """
-        if not self.armed:
+        if not self._armed:
             self.arm()
-            self.armed = True
+            self._armed = True
         switcher = waiter.switcher
         try:
-            self.waiters[switcher].append(waiter)
+            self._waiters[switcher].append(waiter)
         except KeyError:
-            self.waiters[switcher] = deque([waiter])
+            self._waiters[switcher] = deque([waiter])
             if self.ready:
                 switcher.add_ready_object(self)
             if self.is_async:
@@ -77,9 +77,9 @@ class WaitObject(object):
         """
         if ready != self.ready:
             self.ready = ready
-            for callback in self.readiness_callbacks:
+            for callback in self._readiness_callbacks:
                 callback(self, ready)
-            for switcher in self.waiters:
+            for switcher in self._waiters:
                 switcher.set_ready(self, ready)
 
     def notify_readiness(self, callback):
@@ -88,7 +88,7 @@ class WaitObject(object):
         The function will be called back with two arguments:
         the WaitObject, and its ready state (True or False).
         """
-        self.readiness_callbacks.append(callback)
+        self._readiness_callbacks.append(callback)
         if self.ready:
             callback(self, True)
 
