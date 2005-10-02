@@ -11,7 +11,7 @@ import atexit
 from heapq import heappush, heappop, heapify
 from operator import itemgetter
 
-from softlets.core import _singleton
+from softlets.core.common import _singleton
 
 __all__ = ['TimeThread']
 
