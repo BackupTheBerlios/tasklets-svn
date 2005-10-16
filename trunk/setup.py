@@ -5,12 +5,12 @@ from distutils.core import setup
 setup(
     name='Softlets',
     version='0.1',
-    description='A generic cooperative thread scheduler',
+    description='A generic, flexible cooperative thread scheduler',
     author='Antoine Pitrou',
     author_email='antoine@pitrou.net',
     url='http://developer.berlios.de/projects/tasklets',
-    download_url='http://developer.berlios.de/svn/?group_id=2599',
-    packages=['softlets', 'softlets.core'],
+    download_url='http://developer.berlios.de/project/showfiles.php?group_id=4330',
+    packages=['softlets', 'softlets.core', 'softlets.util'],
     license="GNU LGPL",
     classifiers=[
         'Development Status :: 3 - Alpha',
