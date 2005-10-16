@@ -6,7 +6,6 @@ from softlets.core.common import *
 from softlets.core.errors import *
 from softlets.core.waitobject import WaitObject
 
-
 #
 # Ready object
 #
@@ -203,6 +202,7 @@ class Switcher(object):
                 self.async_cond.wait()
                 self.run_async_calls()
                 R()
+
 
 #
 # Functions
