@@ -10,27 +10,15 @@ import threading
 import atexit
 from heapq import heappush, heappop, heapify
 
-from softlets.core.common import _singleton
+#from softlets.core.common import _singleton
 from softlets.util.namedtuple import NamedTuple
 
 __all__ = ['TimeThread']
 
-
-def _p(s):
-    def p():
-        print s
-    return p
-
-def _q(s):
-    def q():
-        if not s % 100:
-            print s
-    return q
-
 _Callback = NamedTuple("timestamp", "func")
 
 
-class _TimeThread(object):
+class TimeThread(object):
     def __init__(self):
         self.callbacks = []
         self.interrupt = threading.Condition()
@@ -113,5 +101,5 @@ class _TimeThread(object):
             self.interrupt.release()
 
 
-TimeThread = _singleton(_TimeThread)
+#TimeThread = _singleton(_TimeThread)
 
