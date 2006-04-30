@@ -41,8 +41,8 @@ def _protect(func, lock=None):
         func.__unprotected
     except AttributeError:
         def new_func(*args, **kargs):
-            lock.acquire()
             try:
+                lock.acquire()
                 return func(*args, **kargs)
             finally:
                 lock.release()

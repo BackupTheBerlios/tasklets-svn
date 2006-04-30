@@ -26,8 +26,8 @@ class Timer(WaitObject):
     def reschedule(self):
         # take the lock to ensure the callback doesn't
         # expire in the meantime
-        self.lock.acquire()
         try:
+            self.lock.acquire()
             if self.callback:
                 self.timethread.remove_timer(self.callback)
             self.set_ready(False)

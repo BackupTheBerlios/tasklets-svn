@@ -169,9 +169,11 @@ class Switcher(object):
         while len(self.threads) > self.nb_daemons:
             # Process pending async calls
             if self.async_calls:
-                A()
-                self.run_async_calls()
-                R()
+                try:
+                    A()
+                    self.run_async_calls()
+                finally:
+                    R()
             # This loop is a fake: we always break because
             # thread calls inside the loop can change the set size
             for r in self.ready_objects:
@@ -198,10 +200,12 @@ class Switcher(object):
                 async = self.nb_async_waits > 0
                 if not async:
                     raise Starvation()
-                A()
-                self.async_cond.wait()
-                self.run_async_calls()
-                R()
+                try:
+                    A()
+                    self.async_cond.wait()
+                    self.run_async_calls()
+                finally:
+                    R()
 
 
 #

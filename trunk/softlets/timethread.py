@@ -30,9 +30,8 @@ def _q(s):
 _Callback = NamedTuple("timestamp", "func")
 
 
-class _TimeThread(threading.Thread):
+class _TimeThread(object):
     def __init__(self):
-        threading.Thread.__init__(self)
         self.callbacks = []
         self.interrupt = threading.Condition()
         self.running = False
@@ -86,8 +85,8 @@ class _TimeThread(threading.Thread):
             self.interrupt.release()
 
     def finish(self):
-        self.running = False
         self.interrupt.acquire()
+        self.running = False
         self.callbacks = []
         self.interrupt.notify()
         self.interrupt.release()
@@ -98,8 +97,7 @@ class _TimeThread(threading.Thread):
             self.interrupt.acquire()
             while self.running:
                 if not self.callbacks:
-                    if self.running:
-                        self.interrupt.wait()
+                    self.interrupt.wait()
                     continue
                 cb = self.callbacks[0]
                 timeout = cb.timestamp - time.time()
